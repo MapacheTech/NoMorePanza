@@ -119,6 +119,8 @@ create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
 
+revoke execute on function public.handle_new_user() from public, anon, authenticated;
+
 -- 6. FUNCIÓN PARA CALCULAR MULTAS DE LA SEMANA (2 descansos gratis/semana, 3er fallo = $50 MXN)
 create or replace function public.reconcile_weekly_penalties(p_target_date date default ((now() at time zone 'America/Mexico_City')::date - 1))
 returns integer
