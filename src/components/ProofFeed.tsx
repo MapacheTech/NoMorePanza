@@ -131,22 +131,10 @@ export function ProofFeed({ logs }: ProofFeedProps) {
 
                       <div className="rounded-lg bg-zinc-950/80 p-1.5">
                         <div className="flex items-center justify-center gap-1 text-[10px] text-zinc-400">
-                          {log.avg_heart_rate ? (
-                            <>
-                              <HeartPulse className="h-3 w-3 text-rose-400" />{' '}
-                              BPM
-                            </>
-                          ) : (
-                            <>
-                              <Activity className="h-3 w-3 text-sky-400" />{' '}
-                              Pasos
-                            </>
-                          )}
+                          <Activity className="h-3 w-3 text-sky-400" /> Pasos
                         </div>
                         <p className="text-xs font-extrabold text-white">
-                          {log.avg_heart_rate
-                            ? `${log.avg_heart_rate} bpm`
-                            : log.steps}
+                          {(log.steps || 0).toLocaleString('es-MX')}
                         </p>
                       </div>
                     </div>
