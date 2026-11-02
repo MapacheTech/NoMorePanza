@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   PenaltyRecord,
   UserProfile,
@@ -30,6 +30,7 @@ import {
   PlusCircle,
   ShieldAlert,
   Sparkles,
+  UserCheck,
   Watch,
 } from 'lucide-react';
 
@@ -44,6 +45,7 @@ export default function HomePage() {
   const [currentUser, setCurrentUser] = useState<UserProfile>(
     initialDemo.profiles[0]
   );
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isCheckInOpen, setIsCheckInOpen] = useState(false);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [bannerAlert, setBannerAlert] = useState<string | null>(null);
@@ -51,68 +53,104 @@ export default function HomePage() {
 
   const todayISO = getMexicoTodayISO();
 
-  // Cargar datos reales de Supabase si las variables de entorno están configuradas
-  useEffect(() => {
+  const loadFromSupabase = useCallback(async () => {
     if (!isSupabaseConfigured()) return;
     setSupabaseConnected(true);
     const supabase = createClient();
 
-    async function loadFromSupabase() {
-      const [
-        { data: authData },
-        { data: dbProfiles },
-        { data: dbLogs },
-        { data: dbPenalties },
-      ] = await Promise.all([
-        supabase.auth.getUser(),
-        supabase.from('profiles').select('*').order('created_at', { ascending: true }),
+    const { data: authData } = await supabase.auth.getUser();
+    const loggedInUser = authData?.user ?? null;
+    setIsAuthenticated(Boolean(loggedInUser));
+
+    // Si el usuario acaba de iniciar sesión con Google/Correo, aseguramos que exista su fila en public.profiles
+    if (loggedInUser) {
+      const metaName =
+        loggedInUser.user_metadata?.full_name ||
+        loggedInUser.user_metadata?.name ||
+        loggedInUser.email?.split('@')[0] ||
+        'Atleta';
+
+      await supabase.from('profiles').upsert(
+        {
+          id: loggedInUser.id,
+          email: loggedInUser.email,
+          full_name: metaName,
+          avatar_url: loggedInUser.user_metadata?.avatar_url || null,
+        },
+        { onConflict: 'id' }
+      );
+    }
+
+    const [{ data: dbProfiles }, { data: dbLogs }, { data: dbPenalties }] =
+      await Promise.all([
+        supabase
+          .from('profiles')
+          .select('*')
+          .order('created_at', { ascending: true }),
         supabase
           .from('workout_logs')
           .select('*, profiles(full_name, avatar_url)')
           .order('workout_date', { ascending: false })
-          .limit(50),
+          .limit(100),
         supabase
           .from('penalties')
           .select('*, profiles(full_name)')
           .order('penalty_date', { ascending: false }),
       ]);
 
-      if (dbProfiles && dbProfiles.length > 0) {
-        setProfiles(dbProfiles as UserProfile[]);
-        if (authData?.user) {
-          const found = dbProfiles.find((p) => p.id === authData.user?.id);
-          if (found) setCurrentUser(found as UserProfile);
-        }
+    if (dbProfiles && dbProfiles.length > 0) {
+      setProfiles(dbProfiles as UserProfile[]);
+      if (loggedInUser) {
+        const found = dbProfiles.find((p) => p.id === loggedInUser.id);
+        if (found) setCurrentUser(found as UserProfile);
+      } else {
+        setCurrentUser(dbProfiles[0] as UserProfile);
       }
 
-      if (dbLogs) {
-        const mappedLogs: WorkoutLog[] = dbLogs.map((row: Record<string, unknown>) => {
-          const prof = row.profiles as { full_name?: string; avatar_url?: string } | null;
+      // Al haber perfiles reales en Supabase, mostramos los registros y multas reales del grupo
+      const mappedLogs: WorkoutLog[] = (dbLogs || []).map(
+        (row: Record<string, unknown>) => {
+          const prof = row.profiles as {
+            full_name?: string;
+            avatar_url?: string;
+          } | null;
           return {
             ...(row as unknown as WorkoutLog),
             user_name: prof?.full_name || 'Integrante',
             user_avatar: prof?.avatar_url || null,
           };
-        });
-        if (mappedLogs.length > 0) setLogs(mappedLogs);
-      }
+        }
+      );
+      setLogs(mappedLogs);
 
-      if (dbPenalties) {
-        const mappedPen: PenaltyRecord[] = dbPenalties.map(
-          (row: Record<string, unknown>) => {
-            const prof = row.profiles as { full_name?: string } | null;
-            return {
-              ...(row as unknown as PenaltyRecord),
-              user_name: prof?.full_name || 'Integrante',
-            };
-          }
-        );
-        setPenalties(mappedPen);
-      }
+      const mappedPen: PenaltyRecord[] = (dbPenalties || []).map(
+        (row: Record<string, unknown>) => {
+          const prof = row.profiles as { full_name?: string } | null;
+          return {
+            ...(row as unknown as PenaltyRecord),
+            user_name: prof?.full_name || 'Integrante',
+          };
+        }
+      );
+      setPenalties(mappedPen);
     }
-
-    loadFromSupabase();
   }, []);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured()) return;
+    loadFromSupabase();
+
+    const supabase = createClient();
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(() => {
+      loadFromSupabase();
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [loadFromSupabase]);
 
   const { leaderboard, computedPenalties, totalPotMXN } = useMemo(
     () => buildGamifiedLeaderboard(profiles, logs, penalties, todayISO),
@@ -135,7 +173,10 @@ export default function HomePage() {
     );
   }, [logs, currentUser.id, todayISO]);
 
-  function handleWorkoutSaved(newLog: WorkoutLog, triggeredPenaltyMxn: number) {
+  async function handleWorkoutSaved(
+    newLog: WorkoutLog,
+    triggeredPenaltyMxn: number
+  ) {
     setLogs((prev) => {
       const filtered = prev.filter(
         (l) =>
@@ -146,6 +187,23 @@ export default function HomePage() {
       );
       return [newLog, ...filtered];
     });
+
+    // Actualizar la marca de reloj favorita del usuario si la cambió durante el check-in
+    if (newLog.watch_brand !== currentUser.watch_brand) {
+      setCurrentUser((prev) => ({ ...prev, watch_brand: newLog.watch_brand }));
+      setProfiles((prev) =>
+        prev.map((p) =>
+          p.id === currentUser.id ? { ...p, watch_brand: newLog.watch_brand } : p
+        )
+      );
+      if (isSupabaseConfigured() && isAuthenticated) {
+        const supabase = createClient();
+        await supabase
+          .from('profiles')
+          .update({ watch_brand: newLog.watch_brand })
+          .eq('id', currentUser.id);
+      }
+    }
 
     if (triggeredPenaltyMxn > 0) {
       const weekStart = getCurrentWeekDaysISO(todayISO)[0];
@@ -161,6 +219,22 @@ export default function HomePage() {
         is_paid: false,
       };
       setPenalties((prev) => [newPenalty, ...prev]);
+
+      if (isSupabaseConfigured() && isAuthenticated) {
+        const supabase = createClient();
+        await supabase.from('penalties').upsert(
+          {
+            user_id: currentUser.id,
+            penalty_date: todayISO,
+            week_start: weekStart,
+            amount_mxn: triggeredPenaltyMxn,
+            reason: newPenalty.reason,
+            is_paid: false,
+          },
+          { onConflict: 'user_id,penalty_date' }
+        );
+      }
+
       setBannerAlert(
         `💸 Se registró tu día sin entrenar y como ya agotaste tus 2 descansos semanales, se sumaron $${triggeredPenaltyMxn} MXN a tu cuenta.`
       );
@@ -172,6 +246,10 @@ export default function HomePage() {
       setBannerAlert(
         `🛌 Día de descanso libre registrado ($0 MXN). Recuerda que tienes máximo 2 por semana.`
       );
+    }
+
+    if (isSupabaseConfigured() && isAuthenticated) {
+      await loadFromSupabase();
     }
   }
 
@@ -190,6 +268,7 @@ export default function HomePage() {
         .from('penalties')
         .update({ is_paid: true, paid_at: new Date().toISOString() })
         .eq('id', penaltyId);
+      await loadFromSupabase();
     }
 
     setBannerAlert('✅ ¡Multa de $50 MXN marcada como pagada en el cochinito!');
@@ -219,6 +298,7 @@ export default function HomePage() {
     if (isSupabaseConfigured()) {
       const supabase = createClient();
       await supabase.auth.signOut();
+      setIsAuthenticated(false);
     }
     setBannerAlert('Sesión cerrada.');
   }
@@ -248,7 +328,6 @@ export default function HomePage() {
           </div>
 
           <div className="flex items-center gap-2.5">
-            {/* Selector rápido de perfil (para probar integrantes en vivo) */}
             <select
               aria-label="Cambiar integrante activo"
               value={currentUser.id}
@@ -274,31 +353,36 @@ export default function HomePage() {
               <span>Subir Ejercicio / Foto</span>
             </button>
 
-            <button
-              type="button"
-              onClick={() => setIsAuthOpen(true)}
-              className="flex items-center gap-1.5 rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-2 text-xs font-semibold text-zinc-200 hover:bg-zinc-800 transition cursor-pointer"
-            >
-              <LogIn className="h-4 w-4 text-emerald-400" />
-              <span className="hidden sm:inline">Auth / Google</span>
-            </button>
-
-            {supabaseConnected ? (
+            {isAuthenticated ? (
+              <div className="flex items-center gap-2">
+                <span className="hidden sm:inline-flex items-center gap-1.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-bold text-emerald-300">
+                  <UserCheck className="h-3.5 w-3.5" />
+                  {currentUser.full_name}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleSignOut}
+                  title="Cerrar sesión"
+                  className="rounded-xl border border-zinc-800 bg-zinc-900 p-2 text-zinc-400 hover:text-white cursor-pointer"
+                >
+                  <LogOut className="h-4 w-4" />
+                </button>
+              </div>
+            ) : (
               <button
                 type="button"
-                onClick={handleSignOut}
-                title="Cerrar sesión"
-                className="rounded-xl border border-zinc-800 bg-zinc-900 p-2 text-zinc-400 hover:text-white cursor-pointer"
+                onClick={() => setIsAuthOpen(true)}
+                className="flex items-center gap-1.5 rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-2 text-xs font-semibold text-zinc-200 hover:bg-zinc-800 transition cursor-pointer"
               >
-                <LogOut className="h-4 w-4" />
+                <LogIn className="h-4 w-4 text-emerald-400" />
+                <span>Iniciar Sesión / Google</span>
               </button>
-            ) : null}
+            )}
           </div>
         </div>
       </header>
 
       <main className="mx-auto max-w-6xl px-4 pt-6 space-y-8">
-        {/* Banner de notificación si acaba de subir foto o pagar multa */}
         {bannerAlert ? (
           <div className="flex items-center justify-between rounded-2xl border border-emerald-500/40 bg-emerald-500/15 px-4 py-3 text-xs sm:text-sm font-semibold text-emerald-200">
             <span>{bannerAlert}</span>
@@ -323,7 +407,9 @@ export default function HomePage() {
                 <span className="inline-flex items-center gap-1.5 rounded-full bg-zinc-800 px-3 py-1 text-xs font-semibold text-zinc-300">
                   <Database className="h-3.5 w-3.5 text-sky-400" />
                   {supabaseConnected
-                    ? 'Conectado a Supabase Live'
+                    ? isAuthenticated
+                      ? 'Conectado a Supabase Live (Sesión Activa)'
+                      : 'Supabase Conectado (Inicia sesión con Google)'
                     : 'Modo Interactivo (Listo para Supabase)'}
                 </span>
               </div>
@@ -331,9 +417,7 @@ export default function HomePage() {
               <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
                 Hola, {currentUser.full_name} 👋{' '}
                 {hasCheckedInToday ? (
-                  <span className="text-emerald-400">
-                    ¡Ya cumpliste hoy!
-                  </span>
+                  <span className="text-emerald-400">¡Ya cumpliste hoy!</span>
                 ) : (
                   <span className="text-amber-400">
                     ¡Aún no subes tu prueba de hoy!
