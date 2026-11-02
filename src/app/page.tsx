@@ -243,16 +243,76 @@ export default function HomePage() {
     await loadFromSupabase();
   }
 
-  async function handleMarkPenaltyPaid(penaltyId: string) {
-    if (!penaltyId.startsWith('auto_')) {
-      const supabase = createClient();
+  async function handleMarkPenaltyPaid(penalty: PenaltyRecord) {
+    if (!isAuthenticated) {
+      setIsAuthOpen(true);
+      return;
+    }
+
+    const supabase = createClient();
+    const nowIso = new Date().toISOString();
+
+    if (penalty.id.startsWith('auto_')) {
+      await supabase.from('penalties').upsert(
+        {
+          user_id: penalty.user_id,
+          penalty_date: penalty.penalty_date,
+          week_start: penalty.week_start,
+          amount_mxn: penalty.amount_mxn,
+          reason: penalty.reason,
+          is_paid: true,
+          paid_at: nowIso,
+        },
+        { onConflict: 'user_id,penalty_date' }
+      );
+    } else {
       await supabase
         .from('penalties')
-        .update({ is_paid: true, paid_at: new Date().toISOString() })
-        .eq('id', penaltyId);
-      await loadFromSupabase();
+        .update({ is_paid: true, paid_at: nowIso })
+        .eq('id', penalty.id);
     }
-    setBannerAlert('✅ ¡Multa de $50 MXN marcada como pagada en el cochinito!');
+
+    await loadFromSupabase();
+    setBannerAlert(
+      `✅ ¡Pago de $${penalty.amount_mxn} MXN de ${
+        penalty.user_name || 'integrante'
+      } registrado en el cochinito!`
+    );
+  }
+
+  async function handlePayAllUserPenalties(userId: string) {
+    if (!isAuthenticated) {
+      setIsAuthOpen(true);
+      return;
+    }
+
+    const unpaidList = computedPenalties.filter(
+      (p) => p.user_id === userId && !p.is_paid
+    );
+    if (unpaidList.length === 0) return;
+
+    const supabase = createClient();
+    const nowIso = new Date().toISOString();
+
+    const rowsToUpsert = unpaidList.map((pen) => ({
+      user_id: pen.user_id,
+      penalty_date: pen.penalty_date,
+      week_start: pen.week_start,
+      amount_mxn: pen.amount_mxn,
+      reason: pen.reason,
+      is_paid: true,
+      paid_at: nowIso,
+    }));
+
+    await supabase
+      .from('penalties')
+      .upsert(rowsToUpsert, { onConflict: 'user_id,penalty_date' });
+
+    await loadFromSupabase();
+    const totalPaid = unpaidList.reduce((s, p) => s + p.amount_mxn, 0);
+    setBannerAlert(
+      `✅ ¡Se liquidaron $${totalPaid} MXN de deuda acumulada en el cochinito!`
+    );
   }
 
   async function handleSignOut() {
@@ -487,6 +547,7 @@ export default function HomePage() {
             penalties={computedPenalties}
             totalPotMXN={totalPotMXN}
             onMarkPenaltyPaid={handleMarkPenaltyPaid}
+            onPayAllUserPenalties={handlePayAllUserPenalties}
           />
         </section>
 

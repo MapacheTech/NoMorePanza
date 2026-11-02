@@ -18,7 +18,8 @@ interface GamifiedLeaderboardProps {
   leaderboard: LeaderboardEntry[];
   penalties: PenaltyRecord[];
   totalPotMXN: number;
-  onMarkPenaltyPaid: (penaltyId: string) => void;
+  onMarkPenaltyPaid: (penalty: PenaltyRecord) => void;
+  onPayAllUserPenalties: (userId: string) => void;
 }
 
 export function GamifiedLeaderboard({
@@ -26,10 +27,10 @@ export function GamifiedLeaderboard({
   penalties,
   totalPotMXN,
   onMarkPenaltyPaid,
+  onPayAllUserPenalties,
 }: GamifiedLeaderboardProps) {
   const [activeTab, setActiveTab] = useState<'athletes' | 'debtors'>('athletes');
 
-  // Ranking ordenado por los que más han fallado / más dinero deben al cochinito
   const debtorsRanking = leaderboard.toSorted((a, b) => {
     if (b.unpaid_fine_mxn !== a.unpaid_fine_mxn) {
       return b.unpaid_fine_mxn - a.unpaid_fine_mxn;
@@ -39,6 +40,10 @@ export function GamifiedLeaderboard({
 
   const unpaidPotMXN = penalties
     .filter((p) => !p.is_paid)
+    .reduce((sum, p) => sum + p.amount_mxn, 0);
+
+  const paidPotMXN = penalties
+    .filter((p) => p.is_paid)
     .reduce((sum, p) => sum + p.amount_mxn, 0);
 
   return (
@@ -65,13 +70,21 @@ export function GamifiedLeaderboard({
             </div>
           </div>
 
-          <div className="flex items-center gap-4 sm:text-right">
-            <div className="rounded-xl border border-zinc-800 bg-zinc-950/80 px-4 py-2.5">
+          <div className="flex flex-wrap items-center gap-3 sm:text-right">
+            <div className="rounded-xl border border-zinc-800 bg-zinc-950/80 px-3.5 py-2.5">
               <p className="text-[11px] uppercase tracking-wider text-zinc-400">
-                Por Cobrar
+                Pendiente por Cobrar
               </p>
-              <p className="text-xl font-black text-rose-400">
+              <p className="text-lg font-black text-rose-400">
                 ${unpaidPotMXN.toLocaleString('es-MX')} MXN
+              </p>
+            </div>
+            <div className="rounded-xl border border-emerald-500/30 bg-zinc-950/80 px-3.5 py-2.5">
+              <p className="text-[11px] uppercase tracking-wider text-emerald-300/80">
+                Ya Cobrado
+              </p>
+              <p className="text-lg font-black text-emerald-400">
+                ${paidPotMXN.toLocaleString('es-MX')} MXN
               </p>
             </div>
             <div className="rounded-xl border border-amber-500/40 bg-zinc-950/90 px-4 py-2.5">
@@ -112,7 +125,7 @@ export function GamifiedLeaderboard({
             }`}
           >
             <Coins className="h-4 w-4" />
-            Tabla de Multas y Faltas ($50 MXN/día)
+            Tabla de Multas y Pagos ($50 MXN/día)
           </button>
         </div>
       </div>
@@ -213,10 +226,14 @@ export function GamifiedLeaderboard({
 
                       <td className="px-4 py-3.5">
                         {entry.unpaid_fine_mxn > 0 ? (
-                          <span className="inline-flex items-center gap-1 rounded-lg bg-rose-500/20 border border-rose-500/40 px-2.5 py-1 text-xs font-extrabold text-rose-300">
-                            Debe ${entry.unpaid_fine_mxn} MXN (
-                            {entry.penalty_days} faltas)
-                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setActiveTab('debtors')}
+                            title="Haz clic para ir a registrar el pago"
+                            className="inline-flex items-center gap-1 rounded-lg bg-rose-500/20 border border-rose-500/40 px-2.5 py-1 text-xs font-extrabold text-rose-300 hover:bg-rose-500/30 transition cursor-pointer"
+                          >
+                            Debe ${entry.unpaid_fine_mxn} MXN (Pagar →)
+                          </button>
                         ) : (
                           <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-500/15 border border-emerald-500/30 px-2.5 py-1 text-xs font-bold text-emerald-300">
                             $0 MXN • Al corriente
@@ -244,19 +261,20 @@ export function GamifiedLeaderboard({
             <div className="flex items-center gap-2 text-rose-400">
               <ShieldAlert className="h-5 w-5" />
               <h4 className="text-sm font-bold text-white">
-                Ranking de Faltas y Deudores ($50 MXN / día)
+                Deuda por Integrante ($50 MXN / día)
               </h4>
             </div>
             <p className="text-xs text-zinc-400">
-              Ordenado por quienes más días han faltado después de usar sus 2
-              descansos semanales.
+              Cuando alguien deposite o entregue sus $50 MXN al cochinito, haz
+              clic en <strong>Liquidar Deuda</strong> o marca el día pagado a la
+              derecha.
             </p>
 
             <div className="space-y-2.5">
               {debtorsRanking.map((person, index) => (
                 <div
                   key={person.user_id}
-                  className="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-950 p-3"
+                  className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-xl border border-zinc-800 bg-zinc-950 p-3"
                 >
                   <div>
                     <div className="flex items-center gap-2">
@@ -268,21 +286,25 @@ export function GamifiedLeaderboard({
                       </span>
                     </div>
                     <p className="text-xs text-zinc-400 mt-0.5">
-                      {person.penalty_days} día(s) de castigo • Total histórico: $
+                      {person.penalty_days} día(s) de multa • Total histórico: $
                       {person.total_fine_mxn} MXN
                     </p>
                   </div>
 
-                  <div className="text-right">
-                    <span
-                      className={`inline-block rounded-xl px-3 py-1 text-xs font-black ${
-                        person.unpaid_fine_mxn > 0
-                          ? 'bg-rose-500 text-white'
-                          : 'bg-zinc-800 text-zinc-400'
-                      }`}
-                    >
-                      Debe ${person.unpaid_fine_mxn} MXN
-                    </span>
+                  <div className="flex items-center gap-2 sm:text-right">
+                    {person.unpaid_fine_mxn > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => onPayAllUserPenalties(person.user_id)}
+                        className="rounded-xl bg-amber-500 px-3 py-1.5 text-xs font-black text-zinc-950 hover:bg-amber-400 transition cursor-pointer"
+                      >
+                        Liquidar ${person.unpaid_fine_mxn} MXN
+                      </button>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 rounded-xl bg-emerald-500/15 border border-emerald-500/30 px-3 py-1 text-xs font-bold text-emerald-300">
+                        <CheckCircle className="h-3.5 w-3.5" /> Sin deuda ($0)
+                      </span>
+                    )}
                   </div>
                 </div>
               ))}
@@ -291,12 +313,12 @@ export function GamifiedLeaderboard({
 
           <div className="lg:col-span-7 rounded-2xl border border-zinc-800 bg-zinc-900/70 p-4 space-y-3">
             <h4 className="text-sm font-bold text-white">
-              Historial Detallado de Multas ($50 MXN cada una)
+              Desglose de Multas por Día ($50 MXN cada una)
             </h4>
             {penalties.length === 0 ? (
               <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-6 text-center text-xs text-zinc-400">
-                ¡Nadie tiene multas registradas todavía! Todos han cumplido con
-                su foto y smartwatch.
+                ¡Nadie tiene multas registradas todavía! Todos están dentro de
+                sus 2 días de descanso semanales permitidos.
               </div>
             ) : (
               <div className="space-y-2.5 max-h-80 overflow-y-auto pr-1">
@@ -330,7 +352,7 @@ export function GamifiedLeaderboard({
                       ) : (
                         <button
                           type="button"
-                          onClick={() => onMarkPenaltyPaid(pen.id)}
+                          onClick={() => onMarkPenaltyPaid(pen)}
                           className="rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-extrabold text-zinc-950 hover:bg-amber-400 transition cursor-pointer"
                         >
                           Marcar $50 Pagados
