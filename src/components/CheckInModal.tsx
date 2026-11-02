@@ -9,7 +9,10 @@ import {
 } from '@/types/fitness';
 import { SmartwatchSyncCard } from './SmartwatchSyncCard';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
-import { getMexicoTodayISO } from '@/lib/penalty-engine';
+import {
+  FREE_REST_DAYS_PER_WEEK,
+  getMexicoTodayISO,
+} from '@/lib/penalty-engine';
 import {
   AlertTriangle,
   BedDouble,
@@ -211,56 +214,62 @@ export function CheckInModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-4 overflow-y-auto">
-      <div className="relative my-auto w-full max-w-2xl rounded-2xl border border-zinc-800 bg-zinc-950 p-5 sm:p-6 text-zinc-100 shadow-2xl max-h-[92vh] overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-sm p-0 sm:p-4">
+      <div className="relative w-full max-w-2xl rounded-t-3xl sm:rounded-2xl border-t sm:border border-zinc-800 bg-zinc-950 p-4 sm:p-6 text-zinc-100 shadow-2xl max-h-[92dvh] overflow-y-auto pb-8 sm:pb-6">
+        {/* Indicador tipo Bottom Sheet en móvil */}
+        <div className="mx-auto mb-3 h-1.5 w-12 rounded-full bg-zinc-800 sm:hidden" />
+
         <button
           onClick={onClose}
-          className="absolute right-4 top-4 rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-800 hover:text-white"
+          className="absolute right-4 top-4 rounded-xl bg-zinc-900 p-2 text-zinc-400 hover:bg-zinc-800 hover:text-white"
           aria-label="Cerrar"
         >
           <X className="h-5 w-5" />
         </button>
 
-        <div className="mb-4">
+        <div className="mb-4 pr-10">
           <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-3 py-1 text-xs font-semibold text-emerald-400 border border-emerald-500/30">
             <Dumbbell className="h-3.5 w-3.5" /> Check-in Diario • {userName}
           </span>
-          <h2 className="mt-2 text-xl font-extrabold text-white">
-            Registrar Día de Ejercicio o Descanso
+          <h2 className="mt-2 text-lg sm:text-xl font-extrabold text-white">
+            Registrar Ejercicio o Descanso
           </h2>
           <p className="text-xs text-zinc-400">
-            Recuerda: tienes 2 días de descanso gratis por semana. A partir del
-            3er día sin entrenar se te cobran{' '}
-            <strong className="text-rose-400">$50 MXN</strong> al cochinito.
+            Tienes <strong>{FREE_REST_DAYS_PER_WEEK} días de descanso</strong>{' '}
+            gratis por semana. A partir del 4to día sin entrenar se cobran{' '}
+            <strong className="text-rose-400">$50 MXN</strong>.
           </p>
         </div>
 
         {/* Selector Entrenamiento vs Día de Descanso */}
-        <div className="mb-5 grid grid-cols-2 gap-2.5">
+        <div className="mb-4 grid grid-cols-2 gap-2">
           <button
             type="button"
             onClick={() => setLogType('workout')}
-            className={`flex items-center justify-center gap-2 rounded-xl border p-3 text-sm font-bold transition cursor-pointer ${
+            className={`flex items-center justify-center gap-1.5 rounded-xl border py-3 px-2 text-xs sm:text-sm font-bold transition cursor-pointer ${
               logType === 'workout'
                 ? 'border-emerald-500 bg-emerald-500/15 text-emerald-300'
                 : 'border-zinc-800 bg-zinc-900 text-zinc-400 hover:text-white'
             }`}
           >
-            <Dumbbell className="h-4 w-4" />
-            ¡Sí Entrené Hoy!
+            <Dumbbell className="h-4 w-4 shrink-0" />
+            <span>¡Sí Entrené Hoy!</span>
           </button>
 
           <button
             type="button"
             onClick={() => setLogType('rest')}
-            className={`flex items-center justify-center gap-2 rounded-xl border p-3 text-sm font-bold transition cursor-pointer ${
+            className={`flex items-center justify-center gap-1.5 rounded-xl border py-3 px-2 text-xs sm:text-sm font-bold transition cursor-pointer ${
               logType === 'rest'
                 ? 'border-amber-500 bg-amber-500/15 text-amber-300'
                 : 'border-zinc-800 bg-zinc-900 text-zinc-400 hover:text-white'
             }`}
           >
-            <BedDouble className="h-4 w-4" />
-            Día de Descanso ({remainingRestDaysThisWeek}/2 libres)
+            <BedDouble className="h-4 w-4 shrink-0" />
+            <span>
+              Descanso ({remainingRestDaysThisWeek}/{FREE_REST_DAYS_PER_WEEK}{' '}
+              libres)
+            </span>
           </button>
         </div>
 
@@ -279,54 +288,53 @@ export function CheckInModal({
 
               {/* Paso 2: Subida de Foto de Prueba OBLIGATORIA */}
               <div className="rounded-2xl border border-zinc-800 bg-zinc-900/70 p-4 space-y-3">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
-                    <Camera className="h-5 w-5 text-emerald-400" />
+                    <Camera className="h-5 w-5 text-emerald-400 shrink-0" />
                     <h3 className="text-sm font-bold text-white">
-                      2. Foto de Prueba Obligatoria (Evidencia Real)
+                      2. Foto de Prueba Entrenando
                     </h3>
                   </div>
-                  <span className="rounded-full bg-rose-500/20 border border-rose-500/40 px-2.5 py-0.5 text-[11px] font-bold text-rose-300">
+                  <span className="rounded-full bg-rose-500/20 border border-rose-500/40 px-2.5 py-0.5 text-[11px] font-bold text-rose-300 shrink-0">
                     Obligatoria
                   </span>
                 </div>
 
                 <p className="text-xs text-zinc-400">
-                  Tómate una foto en el gym, corriendo, con las mancuernas o con
-                  tu reloj en la muñeca para que la familia verifique que no
-                  hiciste trampa.
+                  Toma una foto en el gym, corriendo o entrenando para validar
+                  tu día. Si subes también la captura del reloj arriba, se
+                  mostrarán las 2 fotos en el muro.
                 </p>
 
-                <label className="group relative flex min-h-44 cursor-pointer flex-col items-center justify-center overflow-hidden rounded-xl border-2 border-dashed border-zinc-700 bg-zinc-950 p-4 text-center transition hover:border-emerald-500">
+                <label className="group relative flex min-h-40 cursor-pointer flex-col items-center justify-center overflow-hidden rounded-xl border-2 border-dashed border-zinc-700 bg-zinc-950 p-4 text-center transition hover:border-emerald-500 active:scale-[0.99]">
                   {proofPreview ? (
                     <div className="relative w-full">
                       <img
                         src={proofPreview}
                         alt="Vista previa de prueba de ejercicio"
-                        className="mx-auto max-h-56 rounded-lg object-cover"
+                        className="mx-auto max-h-52 rounded-lg object-cover"
                       />
                       <span className="mt-2 inline-flex items-center gap-1 rounded-full bg-emerald-500 px-3 py-1 text-xs font-bold text-zinc-950">
-                        <CheckCircle2 className="h-3.5 w-3.5" /> Foto lista (clic
-                        para cambiar)
+                        <CheckCircle2 className="h-3.5 w-3.5" /> Foto lista
+                        (toca para cambiar)
                       </span>
                     </div>
                   ) : (
-                    <div className="flex flex-col items-center gap-2 py-4">
-                      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-400 group-hover:scale-110 transition">
+                    <div className="flex flex-col items-center gap-2 py-3">
+                      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-400">
                         <UploadCloud className="h-6 w-6" />
                       </div>
-                      <span className="text-sm font-semibold text-zinc-200">
-                        Subir o tomar foto de prueba ahora
+                      <span className="text-sm font-bold text-zinc-200">
+                        Toca aquí para tomar o elegir foto
                       </span>
                       <span className="text-xs text-zinc-500">
-                        JPG, PNG, WEBP o cámara directa del celular (Máx. 10 MB)
+                        Cámara del celular o galería (Máx. 10 MB)
                       </span>
                     </div>
                   )}
                   <input
                     type="file"
                     accept="image/*"
-                    capture="environment"
                     onChange={handleProofPhotoChange}
                     className="hidden"
                   />
@@ -340,8 +348,8 @@ export function CheckInModal({
                     type="text"
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
-                    placeholder="Ej. Día de pierna terminado, a ver quién paga los $50 hoy..."
-                    className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3.5 py-2.5 text-xs text-white focus:border-emerald-500 focus:outline-none"
+                    placeholder="Ej. Día cumplido, a ver quién paga los $50..."
+                    className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3.5 py-3 text-base sm:text-xs text-white focus:border-emerald-500 focus:outline-none"
                   />
                 </div>
               </div>
@@ -354,13 +362,13 @@ export function CheckInModal({
                 <div className="space-y-1">
                   <h3 className="text-sm font-bold text-white">
                     {remainingRestDaysThisWeek > 0
-                      ? `Tienes ${remainingRestDaysThisWeek} día(s) de descanso libre disponibles esta semana`
-                      : '¡Cuidado! Ya agotaste tus 2 días de descanso libres esta semana'}
+                      ? `Tienes ${remainingRestDaysThisWeek} de ${FREE_REST_DAYS_PER_WEEK} días de descanso libres esta semana`
+                      : `¡Cuidado! Ya agotaste tus ${FREE_REST_DAYS_PER_WEEK} descansos libres esta semana`}
                   </h3>
                   <p className="text-xs text-zinc-300 leading-relaxed">
                     {remainingRestDaysThisWeek > 0
                       ? 'Registrar hoy como día de descanso NO te generará multa de $50 MXN.'
-                      : 'Si no entrenas hoy, se te sumará automáticamente una multa de $50 MXN al cochinito familiar/de amigos.'}
+                      : 'Si no entrenas hoy, se te sumará automáticamente una multa de $50 MXN al cochinito del grupo.'}
                   </p>
                 </div>
               </div>
@@ -373,8 +381,8 @@ export function CheckInModal({
                   type="text"
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Ej. Recuperación muscular / viaje familiar..."
-                  className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3.5 py-2.5 text-xs text-white focus:border-amber-500 focus:outline-none"
+                  placeholder="Ej. Recuperación muscular / compromiso familiar..."
+                  className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3.5 py-3 text-base sm:text-xs text-white focus:border-amber-500 focus:outline-none"
                 />
               </div>
             </div>
@@ -386,18 +394,18 @@ export function CheckInModal({
             </div>
           ) : null}
 
-          <div className="flex items-center justify-end gap-3 pt-2">
+          <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2.5 pt-2">
             <button
               type="button"
               onClick={onClose}
-              className="rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-2.5 text-xs font-semibold text-zinc-300 hover:bg-zinc-800 cursor-pointer"
+              className="rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-3 text-xs font-semibold text-zinc-300 hover:bg-zinc-800 cursor-pointer"
             >
               Cancelar
             </button>
             <button
               type="submit"
               disabled={submitting}
-              className="flex items-center gap-2 rounded-xl bg-emerald-500 px-5 py-2.5 text-xs font-extrabold text-zinc-950 shadow-lg shadow-emerald-500/20 hover:bg-emerald-400 transition disabled:opacity-50 cursor-pointer"
+              className="flex items-center justify-center gap-2 rounded-xl bg-emerald-500 px-5 py-3.5 text-sm font-extrabold text-zinc-950 shadow-lg shadow-emerald-500/20 hover:bg-emerald-400 transition disabled:opacity-50 cursor-pointer"
             >
               <CheckCircle2 className="h-4 w-4" />
               {submitting

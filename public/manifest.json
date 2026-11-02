@@ -1,0 +1,10 @@
+{
+  "name": "NoMorePanza • Reto Fitness Familiar",
+  "short_name": "NoMorePanza",
+  "description": "Control de días de ejercicio con foto obligatoria, smartwatch y tabla gamificada de $50 MXN",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#09090b",
+  "theme_color": "#10b981",
+  "orientation": "portrait"
+}

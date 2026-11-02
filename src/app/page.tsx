@@ -8,6 +8,9 @@ import {
   WorkoutLog,
 } from '@/types/fitness';
 import {
+  CHALLENGE_START_DATE_ISO,
+  FREE_REST_DAYS_PER_WEEK,
+  REQUIRED_WORKOUT_DAYS_PER_WEEK,
   buildGamifiedLeaderboard,
   getCurrentWeekDaysISO,
   getMexicoTodayISO,
@@ -19,16 +22,19 @@ import { ProofFeed } from '@/components/ProofFeed';
 import { CheckInModal } from '@/components/CheckInModal';
 import { AuthModal } from '@/components/AuthModal';
 import {
+  CalendarDays,
   Camera,
   CheckCircle2,
   Database,
   Dumbbell,
   Flame,
+  Home,
   LogIn,
   LogOut,
   PlusCircle,
   ShieldAlert,
   Sparkles,
+  Trophy,
   UserCheck,
   Watch,
 } from 'lucide-react';
@@ -153,14 +159,14 @@ export default function HomePage() {
   const currentUserStats = useMemo(() => {
     if (!currentUser) {
       return {
-        remaining_rest_days_this_week: 2,
+        remaining_rest_days_this_week: FREE_REST_DAYS_PER_WEEK,
         week_workouts: 0,
         unpaid_fine_mxn: 0,
       };
     }
     return (
       leaderboard.find((e) => e.user_id === currentUser.id) || {
-        remaining_rest_days_this_week: 2,
+        remaining_rest_days_this_week: FREE_REST_DAYS_PER_WEEK,
         week_workouts: 0,
         unpaid_fine_mxn: 0,
       }
@@ -211,8 +217,7 @@ export default function HomePage() {
 
     if (triggeredPenaltyMxn > 0) {
       const weekStart = getCurrentWeekDaysISO(todayISO)[0];
-      const reason =
-        'Excedió los 2 días de descanso libres de la semana (Multa automática de $50 MXN)';
+      const reason = `Excedió los ${FREE_REST_DAYS_PER_WEEK} días de descanso libres de la semana (Multa automática de $50 MXN)`;
 
       const supabase = createClient();
       await supabase.from('penalties').upsert(
@@ -228,7 +233,7 @@ export default function HomePage() {
       );
 
       setBannerAlert(
-        `💸 Se registró tu día sin entrenar y como ya agotaste tus 2 descansos semanales, se sumaron $${triggeredPenaltyMxn} MXN a tu cuenta.`
+        `💸 Se registró tu día sin entrenar y como ya agotaste tus ${FREE_REST_DAYS_PER_WEEK} descansos semanales, se sumaron $${triggeredPenaltyMxn} MXN a tu cuenta.`
       );
     } else if (newLog.log_type === 'workout') {
       setBannerAlert(
@@ -236,7 +241,7 @@ export default function HomePage() {
       );
     } else {
       setBannerAlert(
-        `🛌 Día de descanso libre registrado ($0 MXN). Recuerda que tienes máximo 2 por semana.`
+        `🛌 Día de descanso libre registrado ($0 MXN). Recuerda que tienes máximo ${FREE_REST_DAYS_PER_WEEK} por semana.`
       );
     }
 
@@ -323,13 +328,15 @@ export default function HomePage() {
     await loadFromSupabase();
   }
 
+  const isBeforeChallengeStart = todayISO < CHALLENGE_START_DATE_ISO;
+
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 pb-16">
+    <div id="top" className="min-h-screen bg-zinc-950 text-zinc-100 pb-24 md:pb-16">
       {/* Top Navbar */}
-      <header className="sticky top-0 z-30 border-b border-zinc-800/80 bg-zinc-950/85 backdrop-blur-md">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3.5">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500 text-zinc-950 font-black shadow-lg shadow-emerald-500/20">
+      <header className="sticky top-0 z-30 border-b border-zinc-800/80 bg-zinc-950/90 backdrop-blur-md">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-3.5 sm:px-4 py-3">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl bg-emerald-500 text-zinc-950 font-black shadow-lg shadow-emerald-500/20">
               <Dumbbell className="h-5 w-5" />
             </div>
             <div>
@@ -337,17 +344,18 @@ export default function HomePage() {
                 <h1 className="text-base sm:text-lg font-black tracking-tight text-white">
                   NoMorePanza
                 </h1>
-                <span className="hidden sm:inline-flex items-center gap-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 text-[10px] font-bold text-emerald-400">
-                  <Sparkles className="h-3 w-3" /> Reto Familiar & Amigos
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 text-[10px] font-bold text-emerald-400">
+                  <Sparkles className="h-2.5 w-2.5" /> Inicia 2 Nov
                 </span>
               </div>
-              <p className="text-[11px] text-zinc-400">
-                Smartwatch + Foto Obligatoria • 2 descansos/sem • Falta = $50 MXN
+              <p className="text-[10px] sm:text-[11px] text-zinc-400">
+                {FREE_REST_DAYS_PER_WEEK} descansos/sem • Meta{' '}
+                {REQUIRED_WORKOUT_DAYS_PER_WEEK} días • Falta = $50 MXN
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2">
             {isAuthenticated && currentUser ? (
               <select
                 aria-label="Marca de tu Smartwatch"
@@ -367,17 +375,17 @@ export default function HomePage() {
             <button
               type="button"
               onClick={handleOpenCheckIn}
-              className="flex items-center gap-1.5 rounded-xl bg-emerald-500 px-3.5 py-2 text-xs font-extrabold text-zinc-950 shadow-lg shadow-emerald-500/20 hover:bg-emerald-400 transition cursor-pointer"
+              className="hidden sm:flex items-center gap-1.5 rounded-xl bg-emerald-500 px-3.5 py-2 text-xs font-extrabold text-zinc-950 shadow-lg shadow-emerald-500/20 hover:bg-emerald-400 transition cursor-pointer"
             >
               <PlusCircle className="h-4 w-4" />
               <span>Subir Ejercicio / Foto</span>
             </button>
 
             {isAuthenticated && currentUser ? (
-              <div className="flex items-center gap-2">
-                <span className="hidden sm:inline-flex items-center gap-1.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-bold text-emerald-300">
-                  <UserCheck className="h-3.5 w-3.5" />
-                  {currentUser.full_name}
+              <div className="flex items-center gap-1.5">
+                <span className="inline-flex items-center gap-1 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1.5 text-xs font-bold text-emerald-300 max-w-32 sm:max-w-none truncate">
+                  <UserCheck className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">{currentUser.full_name}</span>
                 </span>
                 <button
                   type="button"
@@ -392,17 +400,17 @@ export default function HomePage() {
               <button
                 type="button"
                 onClick={() => setIsAuthOpen(true)}
-                className="flex items-center gap-1.5 rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-2 text-xs font-semibold text-zinc-200 hover:bg-zinc-800 transition cursor-pointer"
+                className="flex items-center gap-1.5 rounded-xl border border-emerald-500/40 bg-emerald-500/15 px-3 py-2 text-xs font-bold text-emerald-300 hover:bg-emerald-500/25 transition cursor-pointer"
               >
                 <LogIn className="h-4 w-4 text-emerald-400" />
-                <span>Iniciar Sesión / Google</span>
+                <span>Entrar</span>
               </button>
             )}
           </div>
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl px-4 pt-6 space-y-8">
+      <main className="mx-auto max-w-6xl px-3.5 sm:px-4 pt-4 sm:pt-6 space-y-6 sm:space-y-8">
         {bannerAlert ? (
           <div className="flex items-center justify-between rounded-2xl border border-emerald-500/40 bg-emerald-500/15 px-4 py-3 text-xs sm:text-sm font-semibold text-emerald-200">
             <span>{bannerAlert}</span>
@@ -417,33 +425,37 @@ export default function HomePage() {
 
         {/* Hero / Estado de Hoy del Usuario Activo */}
         <section className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-          <div className="lg:col-span-8 rounded-3xl border border-zinc-800 bg-gradient-to-br from-zinc-900 via-zinc-900/90 to-emerald-950/30 p-6 flex flex-col justify-between space-y-5">
+          <div className="lg:col-span-8 rounded-3xl border border-zinc-800 bg-gradient-to-br from-zinc-900 via-zinc-900/90 to-emerald-950/30 p-4 sm:p-6 flex flex-col justify-between space-y-4">
             <div className="space-y-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-zinc-800 px-3 py-1 text-xs font-semibold text-zinc-300">
-                  <Watch className="h-3.5 w-3.5 text-emerald-400" />
-                  Apple • Samsung • Huawei (Opción C Híbrida)
+              <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                <span className="inline-flex items-center gap-1 rounded-full bg-zinc-800 px-2.5 py-1 text-[11px] font-semibold text-zinc-300">
+                  <Watch className="h-3 w-3 text-emerald-400" />
+                  Apple • Samsung • Huawei
                 </span>
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-zinc-800 px-3 py-1 text-xs font-semibold text-zinc-300">
-                  <Database className="h-3.5 w-3.5 text-emerald-400" />
+                <span className="inline-flex items-center gap-1 rounded-full bg-zinc-800 px-2.5 py-1 text-[11px] font-semibold text-zinc-300">
+                  <Database className="h-3 w-3 text-emerald-400" />
                   {loadingData
-                    ? 'Sincronizando con Supabase...'
-                    : `Grupo en Vivo (${profiles.length} integrante${
+                    ? 'Sincronizando...'
+                    : `${profiles.length} integrante${
                         profiles.length === 1 ? '' : 's'
-                      })`}
+                      } en vivo`}
                 </span>
               </div>
 
-              <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+              <h2 className="text-xl sm:text-3xl font-black text-white tracking-tight leading-snug">
                 {currentUser ? (
                   <>
                     Hola, {currentUser.full_name} 👋{' '}
                     {hasCheckedInToday ? (
-                      <span className="text-emerald-400">
+                      <span className="text-emerald-400 block sm:inline">
                         ¡Ya cumpliste hoy!
                       </span>
+                    ) : isBeforeChallengeStart ? (
+                      <span className="text-emerald-400 block sm:inline">
+                        ¡El reto arranca mañana 2 de Nov!
+                      </span>
                     ) : (
-                      <span className="text-amber-400">
+                      <span className="text-amber-400 block sm:inline">
                         ¡Aún no subes tu prueba de hoy!
                       </span>
                     )}
@@ -454,45 +466,87 @@ export default function HomePage() {
               </h2>
 
               <p className="text-xs sm:text-sm text-zinc-300 max-w-2xl leading-relaxed">
-                Para que el día cuente debes sincronizar los datos de tu{' '}
-                <strong>Apple Watch, Samsung Galaxy Watch o Huawei Watch</strong>{' '}
-                y subir tu <strong>foto obligatoria entrenando</strong>. Tienes{' '}
-                <strong>2 días de descanso libres por semana</strong>; cada falta
-                adicional cuesta <strong>$50 MXN</strong>.
+                El reto inicia oficialmente el{' '}
+                <strong className="text-emerald-400">
+                  Lunes 2 de Noviembre
+                </strong>
+                . Debes entrenar{' '}
+                <strong>{REQUIRED_WORKOUT_DAYS_PER_WEEK} días por semana</strong>{' '}
+                subiendo tu <strong>foto de prueba obligatoria</strong> y datos
+                de tu smartwatch. Tienes{' '}
+                <strong>
+                  {FREE_REST_DAYS_PER_WEEK} días de descanso libres por semana
+                </strong>
+                ; cada falta adicional cuesta <strong>$50 MXN</strong>.
               </p>
             </div>
 
-            <div className="flex flex-wrap items-center gap-3 pt-1">
+            {/* Selector rápido de reloj para móvil */}
+            {isAuthenticated && currentUser ? (
+              <div className="flex items-center gap-2 md:hidden pt-1">
+                <span className="text-xs text-zinc-400 shrink-0">
+                  Tu reloj:
+                </span>
+                <div className="grid grid-cols-3 gap-1.5 flex-1">
+                  {(['apple', 'samsung', 'huawei'] as WatchBrand[]).map(
+                    (brand) => (
+                      <button
+                        key={brand}
+                        type="button"
+                        onClick={() => handleWatchBrandQuickChange(brand)}
+                        className={`rounded-xl border py-1.5 px-2 text-[11px] font-bold transition ${
+                          currentUser.watch_brand === brand
+                            ? 'border-emerald-500 bg-emerald-500/20 text-emerald-300'
+                            : 'border-zinc-800 bg-zinc-950/70 text-zinc-400'
+                        }`}
+                      >
+                        {brand === 'apple'
+                          ? '⌚ Apple'
+                          : brand === 'samsung'
+                          ? '⌚ Samsung'
+                          : '⌚ Huawei'}
+                      </button>
+                    )
+                  )}
+                </div>
+              </div>
+            ) : null}
+
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 pt-1">
               <button
                 type="button"
                 onClick={handleOpenCheckIn}
-                className="flex items-center gap-2 rounded-2xl bg-emerald-500 px-5 py-3 text-sm font-black text-zinc-950 shadow-xl shadow-emerald-500/20 hover:bg-emerald-400 transition cursor-pointer"
+                className="flex items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-5 py-3.5 text-sm font-black text-zinc-950 shadow-xl shadow-emerald-500/20 hover:bg-emerald-400 active:scale-[0.99] transition cursor-pointer"
               >
                 <Camera className="h-4 w-4" />
                 {hasCheckedInToday
-                  ? 'Actualizar mi Entrenamiento / Foto de Hoy'
-                  : 'Registrar Ejercicio + Subir Foto de Prueba'}
+                  ? 'Actualizar mi Entrenamiento / Foto'
+                  : 'Registrar Ejercicio + Subir Foto'}
               </button>
 
               <a
                 href="/api/strava/connect"
-                className="flex items-center gap-2 rounded-2xl border border-orange-500/40 bg-orange-500/15 px-4 py-3 text-xs font-bold text-orange-300 hover:bg-orange-500/25 transition"
+                className="flex items-center justify-center gap-2 rounded-2xl border border-orange-500/40 bg-orange-500/15 px-4 py-3 text-xs font-bold text-orange-300 hover:bg-orange-500/25 transition text-center"
               >
-                <Flame className="h-4 w-4" />
-                Vincular OAuth Strava (Apple/Samsung/Huawei)
+                <Flame className="h-4 w-4 shrink-0" />
+                <span>Vincular OAuth Strava (Reloj)</span>
               </a>
             </div>
           </div>
 
           {/* Tarjeta Resumen Personal de Multas y Descansos */}
-          <div className="lg:col-span-4 rounded-3xl border border-zinc-800 bg-zinc-900/70 p-5 flex flex-col justify-between space-y-4">
+          <div className="lg:col-span-4 rounded-3xl border border-zinc-800 bg-zinc-900/70 p-4 sm:p-5 flex flex-col justify-between space-y-3.5">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold uppercase tracking-wider text-zinc-400">
-                Tu Estado Esta Semana
+                Tu Resumen Semanal
               </span>
               {hasCheckedInToday ? (
                 <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/20 px-2.5 py-0.5 text-xs font-bold text-emerald-300">
                   <CheckCircle2 className="h-3.5 w-3.5" /> Hoy cumplido
+                </span>
+              ) : isBeforeChallengeStart ? (
+                <span className="inline-flex items-center gap-1 rounded-full bg-sky-500/20 px-2.5 py-0.5 text-xs font-bold text-sky-300">
+                  Inicia 2 Nov
                 </span>
               ) : (
                 <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/20 px-2.5 py-0.5 text-xs font-bold text-amber-300">
@@ -501,20 +555,24 @@ export default function HomePage() {
               )}
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-3.5">
+            <div className="grid grid-cols-2 gap-2.5">
+              <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-3">
                 <p className="text-[11px] text-zinc-400">Días Entrenados</p>
                 <p className="mt-1 text-2xl font-black text-emerald-400">
                   {currentUserStats.week_workouts}{' '}
-                  <span className="text-xs font-normal text-zinc-500">/ 5</span>
+                  <span className="text-xs font-normal text-zinc-500">
+                    / {REQUIRED_WORKOUT_DAYS_PER_WEEK}
+                  </span>
                 </p>
               </div>
 
-              <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-3.5">
+              <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-3">
                 <p className="text-[11px] text-zinc-400">Descansos Gratis</p>
                 <p className="mt-1 text-2xl font-black text-sky-400">
                   {currentUserStats.remaining_rest_days_this_week}{' '}
-                  <span className="text-xs font-normal text-zinc-500">/ 2</span>
+                  <span className="text-xs font-normal text-zinc-500">
+                    / {FREE_REST_DAYS_PER_WEEK}
+                  </span>
                 </p>
               </div>
             </div>
@@ -525,7 +583,7 @@ export default function HomePage() {
                   Tu Saldo de Multas ($50/día)
                 </p>
                 <p className="text-[11px] text-rose-300/80">
-                  Por faltas mayores a 2 descansos/sem
+                  Por faltas &gt;{FREE_REST_DAYS_PER_WEEK} descansos/sem
                 </p>
               </div>
               <span className="text-xl font-black text-rose-400">
@@ -536,12 +594,12 @@ export default function HomePage() {
         </section>
 
         {/* Calendario Semanal Lunes a Domingo */}
-        <section>
+        <section id="semana" className="scroll-mt-20">
           <WeeklyCalendarTracker profiles={profiles} logs={logs} />
         </section>
 
         {/* Tabla Gamificada (Ranking de Ejercicio + Tabla de Castigo de $50 MXN) */}
-        <section>
+        <section id="ranking" className="scroll-mt-20">
           <GamifiedLeaderboard
             leaderboard={leaderboard}
             penalties={computedPenalties}
@@ -552,10 +610,60 @@ export default function HomePage() {
         </section>
 
         {/* Muro de Fotos de Prueba + Métricas de Smartwatch */}
-        <section>
+        <section id="muro" className="scroll-mt-20">
           <ProofFeed logs={logs} />
         </section>
       </main>
+
+      {/* Barra de Navegación Inferior Fija para Móvil (Estilo App Nativa) */}
+      <nav className="fixed bottom-0 inset-x-0 z-40 border-t border-zinc-800/90 bg-zinc-950/95 backdrop-blur-lg md:hidden">
+        <div className="mx-auto grid max-w-md grid-cols-5 items-center px-2 py-1.5">
+          <a
+            href="#top"
+            className="flex flex-col items-center justify-center py-1 text-[10px] font-semibold text-zinc-400 hover:text-emerald-400"
+          >
+            <Home className="h-4 w-4 mb-0.5" />
+            <span>Inicio</span>
+          </a>
+
+          <a
+            href="#semana"
+            className="flex flex-col items-center justify-center py-1 text-[10px] font-semibold text-zinc-400 hover:text-emerald-400"
+          >
+            <CalendarDays className="h-4 w-4 mb-0.5" />
+            <span>Semana</span>
+          </a>
+
+          <button
+            type="button"
+            onClick={handleOpenCheckIn}
+            className="-mt-4 flex flex-col items-center justify-center"
+          >
+            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500 text-zinc-950 shadow-lg shadow-emerald-500/30 active:scale-95 transition">
+              <Camera className="h-6 w-6" />
+            </span>
+            <span className="mt-0.5 text-[10px] font-extrabold text-emerald-400">
+              Subir Foto
+            </span>
+          </button>
+
+          <a
+            href="#ranking"
+            className="flex flex-col items-center justify-center py-1 text-[10px] font-semibold text-zinc-400 hover:text-emerald-400"
+          >
+            <Trophy className="h-4 w-4 mb-0.5" />
+            <span>Ranking</span>
+          </a>
+
+          <a
+            href="#muro"
+            className="flex flex-col items-center justify-center py-1 text-[10px] font-semibold text-zinc-400 hover:text-emerald-400"
+          >
+            <Camera className="h-4 w-4 mb-0.5" />
+            <span>Evidencias</span>
+          </a>
+        </div>
+      </nav>
 
       {/* Modal para Registrar Entrenamiento (Reloj + Foto Obligatoria) o Descanso */}
       {currentUser ? (

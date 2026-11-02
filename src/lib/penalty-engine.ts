@@ -7,8 +7,9 @@ import {
 } from '@/types/fitness';
 
 export const PENALTY_AMOUNT_MXN = 50;
-export const FREE_REST_DAYS_PER_WEEK = 2;
-export const REQUIRED_WORKOUT_DAYS_PER_WEEK = 5;
+export const FREE_REST_DAYS_PER_WEEK = 3;
+export const REQUIRED_WORKOUT_DAYS_PER_WEEK = 4;
+export const CHALLENGE_START_DATE_ISO = '2026-11-02';
 
 export function getMexicoTodayISO(): string {
   const now = new Date();
@@ -39,10 +40,14 @@ export function toMexicoDateISO(dateStr?: string): string | null {
 }
 
 /**
- * Obtiene los 7 días (Lunes a Domingo) de la semana actual en formato YYYY-MM-DD
+ * Obtiene los 7 días (Lunes a Domingo) de la semana activa del reto.
+ * Si hoy es antes del inicio del reto (2026-11-02), muestra la Semana 1 (desde el Lunes 2 de Noviembre).
  */
 export function getCurrentWeekDaysISO(referenceDateISO?: string): string[] {
-  const baseStr = referenceDateISO || getMexicoTodayISO();
+  const rawDate = referenceDateISO || getMexicoTodayISO();
+  const baseStr =
+    rawDate < CHALLENGE_START_DATE_ISO ? CHALLENGE_START_DATE_ISO : rawDate;
+
   const [year, month, day] = baseStr.split('-').map(Number);
   const date = new Date(Date.UTC(year, month - 1, day));
   const dayOfWeek = date.getUTCDay(); // 0 = Domingo, 1 = Lunes, ...
@@ -65,8 +70,9 @@ export function getBadgeForStats(
   penaltyDays: number,
   totalWorkouts: number
 ): string {
-  if (penaltyDays === 0 && totalWorkouts >= 10) return 'Máquina Imparable 🔥';
-  if (penaltyDays === 0 && weekWorkouts >= 4) return 'Cero Multas 🛡️';
+  if (penaltyDays === 0 && totalWorkouts >= 8) return 'Máquina Imparable 🔥';
+  if (penaltyDays === 0 && weekWorkouts >= REQUIRED_WORKOUT_DAYS_PER_WEEK)
+    return 'Meta Semanal Cumplida 🏆';
   if (penaltyDays >= 3) return 'Patrocinador del Cochinito 🐷💸';
   if (penaltyDays >= 1) return 'Deudor en Rehabilitación ⚠️';
   return 'Atleta Activo ⚡';
@@ -75,22 +81,23 @@ export function getBadgeForStats(
 export function getWatchLabel(brand: WatchBrand): string {
   switch (brand) {
     case 'apple':
-      return 'Apple Watch (HealthKit)';
+      return 'Apple Watch';
     case 'samsung':
-      return 'Samsung Galaxy Watch (Health)';
+      return 'Samsung Watch';
     case 'huawei':
-      return 'Huawei Watch (Huawei Health)';
+      return 'Huawei Watch';
     case 'garmin':
-      return 'Garmin Connect';
+      return 'Garmin Watch';
     default:
-      return 'Smartwatch / Sensor BLE';
+      return 'Smartwatch';
   }
 }
 
 /**
- * Calcula la tabla gamificada y las multas aplicando la regla:
- * - 2 días de descanso libres por semana sin multa.
- * - A partir del 3er día sin entrenar en una misma semana (desde que el usuario se registró) -> $50 MXN por cada día fallado.
+ * Calcula la tabla gamificada y las multas aplicando la regla oficial:
+ * - El reto inicia el 2 de noviembre de 2026 (2026-11-02).
+ * - 3 días de descanso libres por semana sin multa (meta de 4 entrenamientos/semana).
+ * - A partir del 4to día sin entrenar en una misma semana -> $50 MXN por cada día fallado.
  */
 export function buildGamifiedLeaderboard(
   profiles: UserProfile[],
@@ -104,7 +111,9 @@ export function buildGamifiedLeaderboard(
 } {
   const currentWeekDays = getCurrentWeekDaysISO(todayISO);
   const weekStart = currentWeekDays[0];
-  const elapsedWeekDays = currentWeekDays.filter((d) => d <= todayISO);
+  const elapsedWeekDays = currentWeekDays.filter(
+    (d) => d >= CHALLENGE_START_DATE_ISO && d <= todayISO
+  );
 
   const logsByUser = new Map<string, WorkoutLog[]>();
   for (const log of logs) {
@@ -113,9 +122,11 @@ export function buildGamifiedLeaderboard(
     logsByUser.set(log.user_id, list);
   }
 
-  const allComputedPenalties: PenaltyRecord[] = [...explicitPenalties];
+  const allComputedPenalties: PenaltyRecord[] = explicitPenalties.filter(
+    (p) => p.penalty_date >= CHALLENGE_START_DATE_ISO
+  );
   const existingPenaltyKey = new Set(
-    explicitPenalties.map((p) => `${p.user_id}_${p.penalty_date}`)
+    allComputedPenalties.map((p) => `${p.user_id}_${p.penalty_date}`)
   );
 
   const entries: LeaderboardEntry[] = profiles.map((profile) => {
@@ -125,12 +136,15 @@ export function buildGamifiedLeaderboard(
       workoutMap.set(l.workout_date, l);
     }
 
-    // No cobrar días anteriores a la fecha en que el integrante creó su cuenta
-    const joinedDateISO = toMexicoDateISO(profile.created_at) || todayISO;
+    const rawJoinedISO = toMexicoDateISO(profile.created_at) || todayISO;
+    const effectiveStartISO =
+      rawJoinedISO < CHALLENGE_START_DATE_ISO
+        ? CHALLENGE_START_DATE_ISO
+        : rawJoinedISO;
 
     let missedInCurrentWeek = 0;
     for (const dayISO of elapsedWeekDays) {
-      if (dayISO < joinedDateISO) {
+      if (dayISO < effectiveStartISO) {
         continue;
       }
 
