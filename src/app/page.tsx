@@ -7,13 +7,12 @@ import {
   WatchBrand,
   WorkoutLog,
 } from '@/types/fitness';
-import { getInitialDemoData } from '@/lib/demo-data';
 import {
   buildGamifiedLeaderboard,
   getCurrentWeekDaysISO,
   getMexicoTodayISO,
 } from '@/lib/penalty-engine';
-import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
+import { createClient } from '@/lib/supabase/client';
 import { GamifiedLeaderboard } from '@/components/GamifiedLeaderboard';
 import { WeeklyCalendarTracker } from '@/components/WeeklyCalendarTracker';
 import { ProofFeed } from '@/components/ProofFeed';
@@ -35,79 +34,72 @@ import {
 } from 'lucide-react';
 
 export default function HomePage() {
-  const initialDemo = useMemo(() => getInitialDemoData(), []);
-  const [profiles, setProfiles] = useState<UserProfile[]>(initialDemo.profiles);
-  const [logs, setLogs] = useState<WorkoutLog[]>(initialDemo.logs);
-  const [penalties, setPenalties] = useState<PenaltyRecord[]>(
-    initialDemo.penalties
-  );
-
-  const [currentUser, setCurrentUser] = useState<UserProfile>(
-    initialDemo.profiles[0]
-  );
+  const [profiles, setProfiles] = useState<UserProfile[]>([]);
+  const [logs, setLogs] = useState<WorkoutLog[]>([]);
+  const [penalties, setPenalties] = useState<PenaltyRecord[]>([]);
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [loadingData, setLoadingData] = useState(true);
+
   const [isCheckInOpen, setIsCheckInOpen] = useState(false);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [bannerAlert, setBannerAlert] = useState<string | null>(null);
-  const [supabaseConnected, setSupabaseConnected] = useState(false);
 
   const todayISO = getMexicoTodayISO();
 
   const loadFromSupabase = useCallback(async () => {
-    if (!isSupabaseConfigured()) return;
-    setSupabaseConnected(true);
-    const supabase = createClient();
+    setLoadingData(true);
+    try {
+      const supabase = createClient();
+      const { data: authData } = await supabase.auth.getUser();
+      const loggedInUser = authData?.user ?? null;
+      setIsAuthenticated(Boolean(loggedInUser));
 
-    const { data: authData } = await supabase.auth.getUser();
-    const loggedInUser = authData?.user ?? null;
-    setIsAuthenticated(Boolean(loggedInUser));
-
-    // Si el usuario acaba de iniciar sesión con Google/Correo, aseguramos que exista su fila en public.profiles
-    if (loggedInUser) {
-      const metaName =
-        loggedInUser.user_metadata?.full_name ||
-        loggedInUser.user_metadata?.name ||
-        loggedInUser.email?.split('@')[0] ||
-        'Atleta';
-
-      await supabase.from('profiles').upsert(
-        {
-          id: loggedInUser.id,
-          email: loggedInUser.email,
-          full_name: metaName,
-          avatar_url: loggedInUser.user_metadata?.avatar_url || null,
-        },
-        { onConflict: 'id' }
-      );
-    }
-
-    const [{ data: dbProfiles }, { data: dbLogs }, { data: dbPenalties }] =
-      await Promise.all([
-        supabase
-          .from('profiles')
-          .select('*')
-          .order('created_at', { ascending: true }),
-        supabase
-          .from('workout_logs')
-          .select('*, profiles(full_name, avatar_url)')
-          .order('workout_date', { ascending: false })
-          .limit(100),
-        supabase
-          .from('penalties')
-          .select('*, profiles(full_name)')
-          .order('penalty_date', { ascending: false }),
-      ]);
-
-    if (dbProfiles && dbProfiles.length > 0) {
-      setProfiles(dbProfiles as UserProfile[]);
       if (loggedInUser) {
-        const found = dbProfiles.find((p) => p.id === loggedInUser.id);
-        if (found) setCurrentUser(found as UserProfile);
-      } else {
-        setCurrentUser(dbProfiles[0] as UserProfile);
+        const metaName =
+          loggedInUser.user_metadata?.full_name ||
+          loggedInUser.user_metadata?.name ||
+          loggedInUser.email?.split('@')[0] ||
+          'Atleta';
+
+        await supabase.from('profiles').upsert(
+          {
+            id: loggedInUser.id,
+            email: loggedInUser.email,
+            full_name: metaName,
+            avatar_url: loggedInUser.user_metadata?.avatar_url || null,
+          },
+          { onConflict: 'id' }
+        );
       }
 
-      // Al haber perfiles reales en Supabase, mostramos los registros y multas reales del grupo
+      const [{ data: dbProfiles }, { data: dbLogs }, { data: dbPenalties }] =
+        await Promise.all([
+          supabase
+            .from('profiles')
+            .select('*')
+            .order('created_at', { ascending: true }),
+          supabase
+            .from('workout_logs')
+            .select('*, profiles(full_name, avatar_url)')
+            .order('workout_date', { ascending: false })
+            .limit(100),
+          supabase
+            .from('penalties')
+            .select('*, profiles(full_name)')
+            .order('penalty_date', { ascending: false }),
+        ]);
+
+      const realProfiles = (dbProfiles || []) as UserProfile[];
+      setProfiles(realProfiles);
+
+      if (loggedInUser) {
+        const found = realProfiles.find((p) => p.id === loggedInUser.id);
+        setCurrentUser(found || realProfiles[0] || null);
+      } else {
+        setCurrentUser(realProfiles[0] || null);
+      }
+
       const mappedLogs: WorkoutLog[] = (dbLogs || []).map(
         (row: Record<string, unknown>) => {
           const prof = row.profiles as {
@@ -133,11 +125,12 @@ export default function HomePage() {
         }
       );
       setPenalties(mappedPen);
+    } finally {
+      setLoadingData(false);
     }
   }, []);
 
   useEffect(() => {
-    if (!isSupabaseConfigured()) return;
     loadFromSupabase();
 
     const supabase = createClient();
@@ -158,6 +151,13 @@ export default function HomePage() {
   );
 
   const currentUserStats = useMemo(() => {
+    if (!currentUser) {
+      return {
+        remaining_rest_days_this_week: 2,
+        week_workouts: 0,
+        unpaid_fine_mxn: 0,
+      };
+    }
     return (
       leaderboard.find((e) => e.user_id === currentUser.id) || {
         remaining_rest_days_this_week: 2,
@@ -165,75 +165,67 @@ export default function HomePage() {
         unpaid_fine_mxn: 0,
       }
     );
-  }, [leaderboard, currentUser.id]);
+  }, [leaderboard, currentUser]);
 
   const hasCheckedInToday = useMemo(() => {
+    if (!currentUser) return false;
     return logs.some(
       (l) => l.user_id === currentUser.id && l.workout_date === todayISO
     );
-  }, [logs, currentUser.id, todayISO]);
+  }, [logs, currentUser, todayISO]);
+
+  function handleOpenCheckIn() {
+    if (!isAuthenticated || !currentUser) {
+      setIsAuthOpen(true);
+      return;
+    }
+    setIsCheckInOpen(true);
+  }
+
+  async function handleWatchBrandQuickChange(newBrand: WatchBrand) {
+    if (!currentUser) return;
+    setCurrentUser({ ...currentUser, watch_brand: newBrand });
+    setProfiles((prev) =>
+      prev.map((p) =>
+        p.id === currentUser.id ? { ...p, watch_brand: newBrand } : p
+      )
+    );
+    if (isAuthenticated) {
+      const supabase = createClient();
+      await supabase
+        .from('profiles')
+        .update({ watch_brand: newBrand })
+        .eq('id', currentUser.id);
+    }
+  }
 
   async function handleWorkoutSaved(
     newLog: WorkoutLog,
     triggeredPenaltyMxn: number
   ) {
-    setLogs((prev) => {
-      const filtered = prev.filter(
-        (l) =>
-          !(
-            l.user_id === newLog.user_id &&
-            l.workout_date === newLog.workout_date
-          )
-      );
-      return [newLog, ...filtered];
-    });
+    if (!currentUser) return;
 
-    // Actualizar la marca de reloj favorita del usuario si la cambió durante el check-in
     if (newLog.watch_brand !== currentUser.watch_brand) {
-      setCurrentUser((prev) => ({ ...prev, watch_brand: newLog.watch_brand }));
-      setProfiles((prev) =>
-        prev.map((p) =>
-          p.id === currentUser.id ? { ...p, watch_brand: newLog.watch_brand } : p
-        )
-      );
-      if (isSupabaseConfigured() && isAuthenticated) {
-        const supabase = createClient();
-        await supabase
-          .from('profiles')
-          .update({ watch_brand: newLog.watch_brand })
-          .eq('id', currentUser.id);
-      }
+      await handleWatchBrandQuickChange(newLog.watch_brand);
     }
 
     if (triggeredPenaltyMxn > 0) {
       const weekStart = getCurrentWeekDaysISO(todayISO)[0];
-      const newPenalty: PenaltyRecord = {
-        id: `pen_${Date.now()}`,
-        user_id: currentUser.id,
-        user_name: currentUser.full_name,
-        penalty_date: todayISO,
-        week_start: weekStart,
-        amount_mxn: triggeredPenaltyMxn,
-        reason:
-          'Excedió los 2 días de descanso libres de la semana (Multa automática de $50 MXN)',
-        is_paid: false,
-      };
-      setPenalties((prev) => [newPenalty, ...prev]);
+      const reason =
+        'Excedió los 2 días de descanso libres de la semana (Multa automática de $50 MXN)';
 
-      if (isSupabaseConfigured() && isAuthenticated) {
-        const supabase = createClient();
-        await supabase.from('penalties').upsert(
-          {
-            user_id: currentUser.id,
-            penalty_date: todayISO,
-            week_start: weekStart,
-            amount_mxn: triggeredPenaltyMxn,
-            reason: newPenalty.reason,
-            is_paid: false,
-          },
-          { onConflict: 'user_id,penalty_date' }
-        );
-      }
+      const supabase = createClient();
+      await supabase.from('penalties').upsert(
+        {
+          user_id: currentUser.id,
+          penalty_date: todayISO,
+          week_start: weekStart,
+          amount_mxn: triggeredPenaltyMxn,
+          reason,
+          is_paid: false,
+        },
+        { onConflict: 'user_id,penalty_date' }
+      );
 
       setBannerAlert(
         `💸 Se registró tu día sin entrenar y como ya agotaste tus 2 descansos semanales, se sumaron $${triggeredPenaltyMxn} MXN a tu cuenta.`
@@ -248,21 +240,11 @@ export default function HomePage() {
       );
     }
 
-    if (isSupabaseConfigured() && isAuthenticated) {
-      await loadFromSupabase();
-    }
+    await loadFromSupabase();
   }
 
   async function handleMarkPenaltyPaid(penaltyId: string) {
-    setPenalties((prev) =>
-      prev.map((p) =>
-        p.id === penaltyId
-          ? { ...p, is_paid: true, paid_at: new Date().toISOString() }
-          : p
-      )
-    );
-
-    if (isSupabaseConfigured() && !penaltyId.startsWith('auto_')) {
+    if (!penaltyId.startsWith('auto_')) {
       const supabase = createClient();
       await supabase
         .from('penalties')
@@ -270,37 +252,15 @@ export default function HomePage() {
         .eq('id', penaltyId);
       await loadFromSupabase();
     }
-
     setBannerAlert('✅ ¡Multa de $50 MXN marcada como pagada en el cochinito!');
   }
 
-  function handleSuccessDemoLogin(info: {
-    name: string;
-    email: string;
-    watchBrand: WatchBrand;
-  }) {
-    const newId = `user_${Date.now()}`;
-    const newUser: UserProfile = {
-      id: newId,
-      email: info.email,
-      full_name: info.name,
-      watch_brand: info.watchBrand,
-      strava_connected: true,
-    };
-    setProfiles((prev) => [...prev, newUser]);
-    setCurrentUser(newUser);
-    setBannerAlert(
-      `👋 ¡Bienvenido ${info.name}! Tu smartwatch se configuró y ya estás en el ranking.`
-    );
-  }
-
   async function handleSignOut() {
-    if (isSupabaseConfigured()) {
-      const supabase = createClient();
-      await supabase.auth.signOut();
-      setIsAuthenticated(false);
-    }
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    setIsAuthenticated(false);
     setBannerAlert('Sesión cerrada.');
+    await loadFromSupabase();
   }
 
   return (
@@ -328,32 +288,32 @@ export default function HomePage() {
           </div>
 
           <div className="flex items-center gap-2.5">
-            <select
-              aria-label="Cambiar integrante activo"
-              value={currentUser.id}
-              onChange={(e) => {
-                const found = profiles.find((p) => p.id === e.target.value);
-                if (found) setCurrentUser(found);
-              }}
-              className="hidden md:block rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-2 text-xs font-semibold text-zinc-200 focus:border-emerald-500 focus:outline-none"
-            >
-              {profiles.map((p) => (
-                <option key={p.id} value={p.id}>
-                  👤 {p.full_name} ({p.watch_brand.toUpperCase()})
-                </option>
-              ))}
-            </select>
+            {isAuthenticated && currentUser ? (
+              <select
+                aria-label="Marca de tu Smartwatch"
+                value={currentUser.watch_brand}
+                onChange={(e) =>
+                  handleWatchBrandQuickChange(e.target.value as WatchBrand)
+                }
+                className="hidden md:block rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-2 text-xs font-semibold text-zinc-200 focus:border-emerald-500 focus:outline-none"
+              >
+                <option value="apple">⌚ Mi Reloj: Apple Watch</option>
+                <option value="samsung">⌚ Mi Reloj: Samsung Watch</option>
+                <option value="huawei">⌚ Mi Reloj: Huawei Watch</option>
+                <option value="garmin">⌚ Mi Reloj: Garmin / Otro</option>
+              </select>
+            ) : null}
 
             <button
               type="button"
-              onClick={() => setIsCheckInOpen(true)}
+              onClick={handleOpenCheckIn}
               className="flex items-center gap-1.5 rounded-xl bg-emerald-500 px-3.5 py-2 text-xs font-extrabold text-zinc-950 shadow-lg shadow-emerald-500/20 hover:bg-emerald-400 transition cursor-pointer"
             >
               <PlusCircle className="h-4 w-4" />
               <span>Subir Ejercicio / Foto</span>
             </button>
 
-            {isAuthenticated ? (
+            {isAuthenticated && currentUser ? (
               <div className="flex items-center gap-2">
                 <span className="hidden sm:inline-flex items-center gap-1.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-bold text-emerald-300">
                   <UserCheck className="h-3.5 w-3.5" />
@@ -405,23 +365,31 @@ export default function HomePage() {
                   Apple • Samsung • Huawei (Opción C Híbrida)
                 </span>
                 <span className="inline-flex items-center gap-1.5 rounded-full bg-zinc-800 px-3 py-1 text-xs font-semibold text-zinc-300">
-                  <Database className="h-3.5 w-3.5 text-sky-400" />
-                  {supabaseConnected
-                    ? isAuthenticated
-                      ? 'Conectado a Supabase Live (Sesión Activa)'
-                      : 'Supabase Conectado (Inicia sesión con Google)'
-                    : 'Modo Interactivo (Listo para Supabase)'}
+                  <Database className="h-3.5 w-3.5 text-emerald-400" />
+                  {loadingData
+                    ? 'Sincronizando con Supabase...'
+                    : `Grupo en Vivo (${profiles.length} integrante${
+                        profiles.length === 1 ? '' : 's'
+                      })`}
                 </span>
               </div>
 
               <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-                Hola, {currentUser.full_name} 👋{' '}
-                {hasCheckedInToday ? (
-                  <span className="text-emerald-400">¡Ya cumpliste hoy!</span>
+                {currentUser ? (
+                  <>
+                    Hola, {currentUser.full_name} 👋{' '}
+                    {hasCheckedInToday ? (
+                      <span className="text-emerald-400">
+                        ¡Ya cumpliste hoy!
+                      </span>
+                    ) : (
+                      <span className="text-amber-400">
+                        ¡Aún no subes tu prueba de hoy!
+                      </span>
+                    )}
+                  </>
                 ) : (
-                  <span className="text-amber-400">
-                    ¡Aún no subes tu prueba de hoy!
-                  </span>
+                  <span>¡Bienvenido al Reto NoMorePanza! 💪</span>
                 )}
               </h2>
 
@@ -437,7 +405,7 @@ export default function HomePage() {
             <div className="flex flex-wrap items-center gap-3 pt-1">
               <button
                 type="button"
-                onClick={() => setIsCheckInOpen(true)}
+                onClick={handleOpenCheckIn}
                 className="flex items-center gap-2 rounded-2xl bg-emerald-500 px-5 py-3 text-sm font-black text-zinc-950 shadow-xl shadow-emerald-500/20 hover:bg-emerald-400 transition cursor-pointer"
               >
                 <Camera className="h-4 w-4" />
@@ -529,23 +497,25 @@ export default function HomePage() {
       </main>
 
       {/* Modal para Registrar Entrenamiento (Reloj + Foto Obligatoria) o Descanso */}
-      <CheckInModal
-        isOpen={isCheckInOpen}
-        onClose={() => setIsCheckInOpen(false)}
-        userId={currentUser.id}
-        userName={currentUser.full_name}
-        defaultWatchBrand={currentUser.watch_brand}
-        remainingRestDaysThisWeek={
-          currentUserStats.remaining_rest_days_this_week
-        }
-        onWorkoutSaved={handleWorkoutSaved}
-      />
+      {currentUser ? (
+        <CheckInModal
+          isOpen={isCheckInOpen}
+          onClose={() => setIsCheckInOpen(false)}
+          userId={currentUser.id}
+          userName={currentUser.full_name}
+          defaultWatchBrand={currentUser.watch_brand}
+          remainingRestDaysThisWeek={
+            currentUserStats.remaining_rest_days_this_week
+          }
+          onWorkoutSaved={handleWorkoutSaved}
+        />
+      ) : null}
 
       {/* Modal de Autenticación con Supabase (Google OAuth + Correo) */}
       <AuthModal
         isOpen={isAuthOpen}
         onClose={() => setIsAuthOpen(false)}
-        onSuccessDemoLogin={handleSuccessDemoLogin}
+        onSuccessDemoLogin={() => loadFromSupabase()}
       />
     </div>
   );

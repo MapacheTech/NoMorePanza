@@ -11,6 +11,7 @@ export interface UserProfile {
   avatar_url?: string | null;
   watch_brand: WatchBrand;
   strava_connected?: boolean;
+  created_at?: string;
 }
 
 export interface WorkoutLog {

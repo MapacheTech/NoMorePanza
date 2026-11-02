@@ -21,6 +21,23 @@ export function getMexicoTodayISO(): string {
   return formatter.format(now);
 }
 
+export function toMexicoDateISO(dateStr?: string): string | null {
+  if (!dateStr) return null;
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return null;
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Mexico_City',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+    return formatter.format(d);
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Obtiene los 7 días (Lunes a Domingo) de la semana actual en formato YYYY-MM-DD
  */
@@ -52,7 +69,7 @@ export function getBadgeForStats(
   if (penaltyDays === 0 && weekWorkouts >= 4) return 'Cero Multas 🛡️';
   if (penaltyDays >= 3) return 'Patrocinador del Cochinito 🐷💸';
   if (penaltyDays >= 1) return 'Deudor en Rehabilitación ⚠️';
-  return 'Atleta en Ascenso ⚡';
+  return 'Atleta Activo ⚡';
 }
 
 export function getWatchLabel(brand: WatchBrand): string {
@@ -73,7 +90,7 @@ export function getWatchLabel(brand: WatchBrand): string {
 /**
  * Calcula la tabla gamificada y las multas aplicando la regla:
  * - 2 días de descanso libres por semana sin multa.
- * - A partir del 3er día sin entrenar en una misma semana -> $50 MXN por cada día fallado.
+ * - A partir del 3er día sin entrenar en una misma semana (desde que el usuario se registró) -> $50 MXN por cada día fallado.
  */
 export function buildGamifiedLeaderboard(
   profiles: UserProfile[],
@@ -89,7 +106,6 @@ export function buildGamifiedLeaderboard(
   const weekStart = currentWeekDays[0];
   const elapsedWeekDays = currentWeekDays.filter((d) => d <= todayISO);
 
-  // Agrupar logs por usuario
   const logsByUser = new Map<string, WorkoutLog[]>();
   for (const log of logs) {
     const list = logsByUser.get(log.user_id) || [];
@@ -109,12 +125,19 @@ export function buildGamifiedLeaderboard(
       workoutMap.set(l.workout_date, l);
     }
 
-    // Evaluar días transcurridos de la semana actual (hasta ayer, o hoy si ya declaró descanso)
+    // No cobrar días anteriores a la fecha en que el integrante creó su cuenta
+    const joinedDateISO = toMexicoDateISO(profile.created_at) || todayISO;
+
     let missedInCurrentWeek = 0;
     for (const dayISO of elapsedWeekDays) {
+      if (dayISO < joinedDateISO) {
+        continue;
+      }
+
       const logForDay = workoutMap.get(dayISO);
       const isPastDay = dayISO < todayISO;
-      const isDeclaredRestToday = dayISO === todayISO && logForDay?.log_type === 'rest';
+      const isDeclaredRestToday =
+        dayISO === todayISO && logForDay?.log_type === 'rest';
 
       if (!logForDay && isPastDay) {
         missedInCurrentWeek++;
@@ -134,7 +157,10 @@ export function buildGamifiedLeaderboard(
             });
           }
         }
-      } else if (logForDay?.log_type === 'rest' && (isPastDay || isDeclaredRestToday)) {
+      } else if (
+        logForDay?.log_type === 'rest' &&
+        (isPastDay || isDeclaredRestToday)
+      ) {
         missedInCurrentWeek++;
         if (missedInCurrentWeek > FREE_REST_DAYS_PER_WEEK) {
           const key = `${profile.id}_${dayISO}`;
@@ -169,21 +195,19 @@ export function buildGamifiedLeaderboard(
       0
     );
 
-    const userPenalties = allComputedPenalties.filter((p) => p.user_id === profile.id);
+    const userPenalties = allComputedPenalties.filter(
+      (p) => p.user_id === profile.id
+    );
     const penaltyDays = userPenalties.length;
     const totalFineMxn = userPenalties.reduce((sum, p) => sum + p.amount_mxn, 0);
     const unpaidFineMxn = userPenalties
       .filter((p) => !p.is_paid)
       .reduce((sum, p) => sum + p.amount_mxn, 0);
 
-    // Calcular racha actual de días entrenados
-    let streak = 0;
-    const sortedWorkoutDates = validWorkouts
-      .map((w) => w.workout_date)
-      .sort((a, b) => (a > b ? -1 : 1));
-    streak = sortedWorkoutDates.length > 0 ? Math.min(sortedWorkoutDates.length, weekWorkouts + 2) : 0;
-
-    const remainingRestDays = Math.max(0, FREE_REST_DAYS_PER_WEEK - missedInCurrentWeek);
+    const remainingRestDays = Math.max(
+      0,
+      FREE_REST_DAYS_PER_WEEK - missedInCurrentWeek
+    );
 
     const xpScore =
       validWorkouts.length * 100 +
@@ -205,18 +229,20 @@ export function buildGamifiedLeaderboard(
       total_fine_mxn: totalFineMxn,
       unpaid_fine_mxn: unpaidFineMxn,
       xp_score: xpScore,
-      current_streak: streak,
+      current_streak: validWorkouts.length,
       badge: getBadgeForStats(weekWorkouts, penaltyDays, validWorkouts.length),
     };
   });
 
-  // Ordenar por XP y días entrenados
   const leaderboard = entries.toSorted((a, b) => {
     if (b.xp_score !== a.xp_score) return b.xp_score - a.xp_score;
     return b.total_workouts - a.total_workouts;
   });
 
-  const totalPotMXN = allComputedPenalties.reduce((sum, p) => sum + p.amount_mxn, 0);
+  const totalPotMXN = allComputedPenalties.reduce(
+    (sum, p) => sum + p.amount_mxn,
+    0
+  );
 
   return {
     leaderboard,
